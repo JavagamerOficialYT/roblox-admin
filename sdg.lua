@@ -3,9 +3,10 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
 
 ------------------------------------------------
--- STATE (single source of truth)
+-- STATE
 ------------------------------------------------
 local state = {
 	char = nil,
@@ -15,10 +16,12 @@ local state = {
 	jumpPower = 50,
 
 	infiniteJump = false,
+
 	flying = false,
 	noclip = false,
 
 	flySpeed = 60,
+
 	flyBV = nil,
 	flyBG = nil
 }
@@ -38,18 +41,15 @@ player.CharacterAdded:Connect(bindCharacter)
 if player.Character then bindCharacter(player.Character) end
 
 ------------------------------------------------
--- APPLY STATS (anti-reset fix)
+-- FORCE APPLY (fix resets)
 ------------------------------------------------
-local function applyStats()
-	if not state.hum then return end
-	state.hum.WalkSpeed = state.walkSpeed
-	state.hum.JumpPower = state.jumpPower
-end
-
 task.spawn(function()
 	while true do
 		task.wait(0.5)
-		applyStats()
+		if state.hum then
+			state.hum.WalkSpeed = state.walkSpeed
+			state.hum.JumpPower = state.jumpPower
+		end
 	end
 end)
 
@@ -64,7 +64,7 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 ------------------------------------------------
--- FLY SYSTEM
+-- FLY
 ------------------------------------------------
 local function startFly()
 	local hrp = state.char and state.char:FindFirstChild("HumanoidRootPart")
@@ -92,17 +92,16 @@ RunService.RenderStepped:Connect(function()
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp or not state.flyBV then return end
 
-	local cam = workspace.CurrentCamera
 	local dir = Vector3.zero
 
-	if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
-	if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
-	if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
-	if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += camera.CFrame.LookVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= camera.CFrame.LookVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= camera.CFrame.RightVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += camera.CFrame.RightVector end
 	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
 
 	state.flyBV.Velocity = (dir.Magnitude > 0 and dir.Unit * state.flySpeed) or Vector3.zero
-	state.flyBG.CFrame = cam.CFrame
+	state.flyBG.CFrame = camera.CFrame
 end)
 
 ------------------------------------------------
@@ -122,21 +121,71 @@ RunService.Stepped:Connect(function()
 end)
 
 ------------------------------------------------
--- INPUT TOGGLE TESTS (replace with UI if you want)
+-- UI (RAYFIELD)
 ------------------------------------------------
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then return end
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
-	if input.KeyCode == Enum.KeyCode.F then
-		state.flying = not state.flying
-		if state.flying then startFly() else stopFly() end
-	end
+local Window = Rayfield:CreateWindow({
+	Name = "Admin Movement Hub",
+	ConfigurationSaving = { Enabled = false }
+})
 
-	if input.KeyCode == Enum.KeyCode.G then
-		state.noclip = not state.noclip
-	end
+local Tab = Window:CreateTab("Main")
 
-	if input.KeyCode == Enum.KeyCode.H then
-		state.infiniteJump = not state.infiniteJump
+------------------------------------------------
+-- WALK SPEED
+------------------------------------------------
+Tab:CreateSlider({
+	Name = "WalkSpeed",
+	Range = {16, 200},
+	Callback = function(v)
+		state.walkSpeed = v
 	end
-end)
+})
+
+------------------------------------------------
+-- JUMP POWER
+------------------------------------------------
+Tab:CreateSlider({
+	Name = "JumpPower",
+	Range = {50, 250},
+	Callback = function(v)
+		state.jumpPower = v
+	end
+})
+
+------------------------------------------------
+-- FLY SPEED
+------------------------------------------------
+Tab:CreateSlider({
+	Name = "Fly Speed",
+	Range = {20, 200},
+	Callback = function(v)
+		state.flySpeed = v
+	end
+})
+
+------------------------------------------------
+-- TOGGLES
+------------------------------------------------
+Tab:CreateToggle({
+	Name = "Infinite Jump",
+	Callback = function(v)
+		state.infiniteJump = v
+	end
+})
+
+Tab:CreateToggle({
+	Name = "Fly",
+	Callback = function(v)
+		state.flying = v
+		if v then startFly() else stopFly() end
+	end
+})
+
+Tab:CreateToggle({
+	Name = "Noclip",
+	Callback = function(v)
+		state.noclip = v
+	end
+})
