@@ -1,72 +1,104 @@
---// SERVICES
+--// OWNER CHECK
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-
 local player = Players.LocalPlayer
-local camera = workspace.CurrentCamera
 
-local OWNER_USER_ID = 11072973894
-if player.UserId ~= OWNER_USER_ID then return end
-
-------------------------------------------------
---// NOTIFICATIONS (SAFE)
-------------------------------------------------
-local gui = Instance.new("ScreenGui")
-gui.Name = "AdminNotify"
-gui.ResetOnSpawn = false
-gui.Parent = game:GetService("CoreGui")
-
-local function notify(text)
-	local f = Instance.new("Frame")
-	f.Size = UDim2.new(0, 240, 0, 45)
-	f.Position = UDim2.new(1, 260, 1, -70)
-	f.BackgroundColor3 = Color3.fromRGB(25,25,25)
-	f.BorderSizePixel = 0
-	f.Parent = gui
-
-	Instance.new("UICorner", f).CornerRadius = UDim.new(0,8)
-
-	local t = Instance.new("TextLabel")
-	t.Size = UDim2.new(1,-10,1,0)
-	t.Position = UDim2.new(0,10,0,0)
-	t.BackgroundTransparency = 1
-	t.Text = text
-	t.TextColor3 = Color3.new(1,1,1)
-	t.Font = Enum.Font.Gotham
-	t.TextSize = 14
-	t.TextXAlignment = Enum.TextXAlignment.Left
-	t.Parent = f
-
-	TweenService:Create(f, TweenInfo.new(0.25), {
-		Position = UDim2.new(1,-260,1,-70)
-	}):Play()
-
-	task.delay(2, function()
-		f:Destroy()
-	end)
+if player.UserId ~= 11072973894 then
+	return warn("Unauthorized user")
 end
+
+--// SAFE LOADER WRAPPER
+local function safeLoad(url)
+	local success, result = pcall(function()
+		return loadstring(game:HttpGet(url))()
+	end)
+
+	if not success then
+		warn("Failed to load:", url)
+	end
+
+	return result
+end
+
+------------------------------------------------
+--// HUB UI
+------------------------------------------------
+local Rayfield = safeLoad("https://sirius.menu/rayfield")
+
+local Window = Rayfield:CreateWindow({
+	Name = "One Click Admin Hub",
+	LoadingTitle = "Loading Hub...",
+	ConfigurationSaving = { Enabled = false }
+})
+
+local Tab = Window:CreateTab("Main")
 
 ------------------------------------------------
 --// STATE
 ------------------------------------------------
+local espEnabled = false
 local flying = false
 local noclip = false
 local flySpeed = 60
+local walkSpeed = 16
+local jumpPower = 50
+
 local flyBV, flyBG
+local highlights = {}
 
 ------------------------------------------------
---// FLY (SAFE SINGLE LOOP)
+--// NOTIFY
 ------------------------------------------------
-local function getHRP()
-	local char = player.Character
-	if not char then return nil end
-	return char:FindFirstChild("HumanoidRootPart")
+local function notify(msg)
+	Rayfield:Notify({
+		Title = "Hub",
+		Content = msg,
+		Duration = 2
+	})
 end
 
+------------------------------------------------
+--// ESP
+------------------------------------------------
+local function enableESP()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player and p.Character and not highlights[p] then
+			local h = Instance.new("Highlight")
+			h.FillColor = Color3.fromRGB(255,0,0)
+			h.FillTransparency = 0.4
+			h.OutlineColor = Color3.fromRGB(255,255,255)
+			h.Parent = p.Character
+			highlights[p] = h
+		end
+	end
+end
+
+local function disableESP()
+	for _, h in pairs(highlights) do
+		h:Destroy()
+	end
+	table.clear(highlights)
+end
+
+------------------------------------------------
+--// SPEED
+------------------------------------------------
+local function applySpeed()
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	hum.WalkSpeed = walkSpeed
+	hum.JumpPower = jumpPower
+end
+
+player.CharacterAdded:Connect(function()
+	task.wait(1)
+	applySpeed()
+end)
+
+------------------------------------------------
+--// FLY
+------------------------------------------------
 local function startFly()
-	local hrp = getHRP()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
 
 	flyBV = Instance.new("BodyVelocity")
@@ -81,33 +113,31 @@ end
 local function stopFly()
 	if flyBV then flyBV:Destroy() end
 	if flyBG then flyBG:Destroy() end
-	flyBV, flyBG = nil, nil
 end
 
-RunService.RenderStepped:Connect(function()
+game:GetService("RunService").RenderStepped:Connect(function()
 	if not flying then return end
 
-	local hrp = getHRP()
-	if not hrp or not flyBV or not flyBG then return end
-
 	local cam = workspace.CurrentCamera
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp or not flyBV then return end
+
 	local dir = Vector3.zero
 
-	if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
-	if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
-	if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
-	if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
-	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
-	if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
+	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
 
 	flyBV.Velocity = (dir.Magnitude > 0 and dir.Unit * flySpeed) or Vector3.zero
 	flyBG.CFrame = cam.CFrame
 end)
 
 ------------------------------------------------
---// NOCLIP (SAFE)
+--// NOCLIP
 ------------------------------------------------
-RunService.Stepped:Connect(function()
+game:GetService("RunService").Stepped:Connect(function()
 	if not noclip then return end
 
 	local char = player.Character
@@ -121,21 +151,63 @@ RunService.Stepped:Connect(function()
 end)
 
 ------------------------------------------------
---// KEYBINDS (TEST FIRST)
+--// UI CONTROLS (ONE CLICK HUB)
 ------------------------------------------------
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then return end
 
-	if input.KeyCode == Enum.KeyCode.F then
+Tab:CreateButton({
+	Name = "Toggle ESP",
+	Callback = function()
+		espEnabled = not espEnabled
+		if espEnabled then
+			enableESP()
+		else
+			disableESP()
+		end
+		notify("ESP: "..tostring(espEnabled))
+	end
+})
+
+Tab:CreateButton({
+	Name = "Toggle Fly",
+	Callback = function()
 		flying = not flying
 		if flying then startFly() else stopFly() end
 		notify("Fly: "..tostring(flying))
 	end
+})
 
-	if input.KeyCode == Enum.KeyCode.G then
+Tab:CreateButton({
+	Name = "Toggle Noclip",
+	Callback = function()
 		noclip = not noclip
 		notify("Noclip: "..tostring(noclip))
 	end
-end)
+})
 
-notify("Core Admin Loaded")
+Tab:CreateSlider({
+	Name = "Fly Speed",
+	Range = {20,200},
+	Callback = function(v)
+		flySpeed = v
+	end
+})
+
+Tab:CreateSlider({
+	Name = "WalkSpeed",
+	Range = {16,200},
+	Callback = function(v)
+		walkSpeed = v
+		applySpeed()
+	end
+})
+
+Tab:CreateSlider({
+	Name = "JumpPower",
+	Range = {50,250},
+	Callback = function(v)
+		jumpPower = v
+		applySpeed()
+	end
+})
+
+notify("Hub Loaded Successfully")
