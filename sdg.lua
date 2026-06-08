@@ -1,93 +1,142 @@
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
 ------------------------------------------------
--- SETTINGS
+-- STATE (single source of truth)
 ------------------------------------------------
-local walkSpeed = 16
-local jumpPower = 50
-local infiniteJump = false
+local state = {
+	char = nil,
+	hum = nil,
+
+	walkSpeed = 16,
+	jumpPower = 50,
+
+	infiniteJump = false,
+	flying = false,
+	noclip = false,
+
+	flySpeed = 60,
+	flyBV = nil,
+	flyBG = nil
+}
 
 ------------------------------------------------
--- APPLY CHARACTER STATS
+-- CHARACTER HANDLER
 ------------------------------------------------
-local function apply(char)
-	local hum = char:WaitForChild("Humanoid")
+local function bindCharacter(char)
+	state.char = char
+	state.hum = char:WaitForChild("Humanoid")
 
-	hum.WalkSpeed = walkSpeed
-	hum.JumpPower = jumpPower
+	state.hum.WalkSpeed = state.walkSpeed
+	state.hum.JumpPower = state.jumpPower
 end
 
-player.CharacterAdded:Connect(apply)
-if player.Character then apply(player.Character) end
+player.CharacterAdded:Connect(bindCharacter)
+if player.Character then bindCharacter(player.Character) end
+
+------------------------------------------------
+-- APPLY STATS (anti-reset fix)
+------------------------------------------------
+local function applyStats()
+	if not state.hum then return end
+	state.hum.WalkSpeed = state.walkSpeed
+	state.hum.JumpPower = state.jumpPower
+end
+
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		applyStats()
+	end
+end)
 
 ------------------------------------------------
 -- INFINITE JUMP
 ------------------------------------------------
 UserInputService.JumpRequest:Connect(function()
-	if not infiniteJump then return end
+	if not state.infiniteJump then return end
+	if not state.hum then return end
 
-	local char = player.Character
+	state.hum:ChangeState(Enum.HumanoidStateType.Jumping)
+end)
+
+------------------------------------------------
+-- FLY SYSTEM
+------------------------------------------------
+local function startFly()
+	local hrp = state.char and state.char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	state.flyBV = Instance.new("BodyVelocity")
+	state.flyBV.MaxForce = Vector3.new(1e9,1e9,1e9)
+	state.flyBV.Parent = hrp
+
+	state.flyBG = Instance.new("BodyGyro")
+	state.flyBG.MaxTorque = Vector3.new(1e9,1e9,1e9)
+	state.flyBG.Parent = hrp
+end
+
+local function stopFly()
+	if state.flyBV then state.flyBV:Destroy() end
+	if state.flyBG then state.flyBG:Destroy() end
+	state.flyBV, state.flyBG = nil, nil
+end
+
+RunService.RenderStepped:Connect(function()
+	if not state.flying then return end
+
+	local char = state.char
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp or not state.flyBV then return end
+
+	local cam = workspace.CurrentCamera
+	local dir = Vector3.zero
+
+	if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
+
+	state.flyBV.Velocity = (dir.Magnitude > 0 and dir.Unit * state.flySpeed) or Vector3.zero
+	state.flyBG.CFrame = cam.CFrame
+end)
+
+------------------------------------------------
+-- NOCLIP
+------------------------------------------------
+RunService.Stepped:Connect(function()
+	if not state.noclip then return end
+
+	local char = state.char
 	if not char then return end
 
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if hum then
-		hum:ChangeState(Enum.HumanoidStateType.Jumping)
+	for _, v in ipairs(char:GetDescendants()) do
+		if v:IsA("BasePart") then
+			v.CanCollide = false
+		end
 	end
 end)
 
 ------------------------------------------------
--- UI (RAYFIELD)
+-- INPUT TOGGLE TESTS (replace with UI if you want)
 ------------------------------------------------
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
 
-local Window = Rayfield:CreateWindow({
-	Name = "Movement Controller",
-	ConfigurationSaving = { Enabled = false }
-})
-
-local Tab = Window:CreateTab("Movement")
-
-------------------------------------------------
--- SLIDERS + TOGGLES
-------------------------------------------------
-
-Tab:CreateSlider({
-	Name = "WalkSpeed",
-	Range = {16, 200},
-	Increment = 1,
-	CurrentValue = walkSpeed,
-	Callback = function(v)
-		walkSpeed = v
-
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.WalkSpeed = v
-		end
+	if input.KeyCode == Enum.KeyCode.F then
+		state.flying = not state.flying
+		if state.flying then startFly() else stopFly() end
 	end
-})
 
-Tab:CreateSlider({
-	Name = "JumpPower",
-	Range = {50, 250},
-	Increment = 1,
-	CurrentValue = jumpPower,
-	Callback = function(v)
-		jumpPower = v
-
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.JumpPower = v
-		end
+	if input.KeyCode == Enum.KeyCode.G then
+		state.noclip = not state.noclip
 	end
-})
 
-Tab:CreateToggle({
-	Name = "Infinite Jump",
-	CurrentValue = false,
-	Callback = function(v)
-		infiniteJump = v
+	if input.KeyCode == Enum.KeyCode.H then
+		state.infiniteJump = not state.infiniteJump
 	end
-})
+end)
