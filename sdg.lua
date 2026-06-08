@@ -1,213 +1,78 @@
---// OWNER CHECK
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
 local player = Players.LocalPlayer
 
-if player.UserId ~= 11072973894 then
-	return warn("Unauthorized user")
-end
-
---// SAFE LOADER WRAPPER
-local function safeLoad(url)
-	local success, result = pcall(function()
-		return loadstring(game:HttpGet(url))()
-	end)
-
-	if not success then
-		warn("Failed to load:", url)
-	end
-
-	return result
-end
-
 ------------------------------------------------
---// HUB UI
+-- STATE
 ------------------------------------------------
-local Rayfield = safeLoad("https://sirius.menu/rayfield")
-
-local Window = Rayfield:CreateWindow({
-	Name = "One Click Admin Hub",
-	LoadingTitle = "Loading Hub...",
-	ConfigurationSaving = { Enabled = false }
-})
-
-local Tab = Window:CreateTab("Main")
-
-------------------------------------------------
---// STATE
-------------------------------------------------
-local espEnabled = false
-local flying = false
-local noclip = false
-local flySpeed = 60
 local walkSpeed = 16
 local jumpPower = 50
-
-local flyBV, flyBG
-local highlights = {}
+local infiniteJump = false
+local hum = nil
 
 ------------------------------------------------
---// NOTIFY
+-- CHARACTER SETUP
 ------------------------------------------------
-local function notify(msg)
-	Rayfield:Notify({
-		Title = "Hub",
-		Content = msg,
-		Duration = 2
-	})
+local function bind(char)
+	hum = char:WaitForChild("Humanoid")
+
+	hum.WalkSpeed = walkSpeed
+	hum.JumpPower = jumpPower
 end
 
-------------------------------------------------
---// ESP
-------------------------------------------------
-local function enableESP()
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= player and p.Character and not highlights[p] then
-			local h = Instance.new("Highlight")
-			h.FillColor = Color3.fromRGB(255,0,0)
-			h.FillTransparency = 0.4
-			h.OutlineColor = Color3.fromRGB(255,255,255)
-			h.Parent = p.Character
-			highlights[p] = h
-		end
-	end
-end
-
-local function disableESP()
-	for _, h in pairs(highlights) do
-		h:Destroy()
-	end
-	table.clear(highlights)
-end
+player.CharacterAdded:Connect(bind)
+if player.Character then bind(player.Character) end
 
 ------------------------------------------------
---// SPEED
+-- APPLY FUNCTION (fixes resets)
 ------------------------------------------------
-local function applySpeed()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+local function apply()
 	if not hum then return end
 	hum.WalkSpeed = walkSpeed
 	hum.JumpPower = jumpPower
 end
 
-player.CharacterAdded:Connect(function()
-	task.wait(1)
-	applySpeed()
+------------------------------------------------
+-- INFINITE JUMP
+------------------------------------------------
+UserInputService.JumpRequest:Connect(function()
+	if not infiniteJump then return end
+	if not hum then return end
+
+	hum:ChangeState(Enum.HumanoidStateType.Jumping)
 end)
 
 ------------------------------------------------
---// FLY
+-- INPUT TEST CONTROLS (replace with your UI)
 ------------------------------------------------
-local function startFly()
-	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
 
-	flyBV = Instance.new("BodyVelocity")
-	flyBV.MaxForce = Vector3.new(1e9,1e9,1e9)
-	flyBV.Parent = hrp
+	-- Toggle infinite jump
+	if input.KeyCode == Enum.KeyCode.H then
+		infiniteJump = not infiniteJump
+		print("Infinite Jump:", infiniteJump)
+	end
 
-	flyBG = Instance.new("BodyGyro")
-	flyBG.MaxTorque = Vector3.new(1e9,1e9,1e9)
-	flyBG.Parent = hrp
-end
+	-- Example speed controls
+	if input.KeyCode == Enum.KeyCode.Equals then
+		walkSpeed += 5
+		apply()
+	end
 
-local function stopFly()
-	if flyBV then flyBV:Destroy() end
-	if flyBG then flyBG:Destroy() end
-end
+	if input.KeyCode == Enum.KeyCode.Minus then
+		walkSpeed -= 5
+		apply()
+	end
 
-game:GetService("RunService").RenderStepped:Connect(function()
-	if not flying then return end
+	if input.KeyCode == Enum.KeyCode.RightBracket then
+		jumpPower += 10
+		apply()
+	end
 
-	local cam = workspace.CurrentCamera
-	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	if not hrp or not flyBV then return end
-
-	local dir = Vector3.zero
-
-	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
-	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
-	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
-	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
-	if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
-
-	flyBV.Velocity = (dir.Magnitude > 0 and dir.Unit * flySpeed) or Vector3.zero
-	flyBG.CFrame = cam.CFrame
-end)
-
-------------------------------------------------
---// NOCLIP
-------------------------------------------------
-game:GetService("RunService").Stepped:Connect(function()
-	if not noclip then return end
-
-	local char = player.Character
-	if not char then return end
-
-	for _, v in ipairs(char:GetDescendants()) do
-		if v:IsA("BasePart") then
-			v.CanCollide = false
-		end
+	if input.KeyCode == Enum.KeyCode.LeftBracket then
+		jumpPower -= 10
+		apply()
 	end
 end)
-
-------------------------------------------------
---// UI CONTROLS (ONE CLICK HUB)
-------------------------------------------------
-
-Tab:CreateButton({
-	Name = "Toggle ESP",
-	Callback = function()
-		espEnabled = not espEnabled
-		if espEnabled then
-			enableESP()
-		else
-			disableESP()
-		end
-		notify("ESP: "..tostring(espEnabled))
-	end
-})
-
-Tab:CreateButton({
-	Name = "Toggle Fly",
-	Callback = function()
-		flying = not flying
-		if flying then startFly() else stopFly() end
-		notify("Fly: "..tostring(flying))
-	end
-})
-
-Tab:CreateButton({
-	Name = "Toggle Noclip",
-	Callback = function()
-		noclip = not noclip
-		notify("Noclip: "..tostring(noclip))
-	end
-})
-
-Tab:CreateSlider({
-	Name = "Fly Speed",
-	Range = {20,200},
-	Callback = function(v)
-		flySpeed = v
-	end
-})
-
-Tab:CreateSlider({
-	Name = "WalkSpeed",
-	Range = {16,200},
-	Callback = function(v)
-		walkSpeed = v
-		applySpeed()
-	end
-})
-
-Tab:CreateSlider({
-	Name = "JumpPower",
-	Range = {50,250},
-	Callback = function(v)
-		jumpPower = v
-		applySpeed()
-	end
-})
-
-notify("Hub Loaded Successfully")
